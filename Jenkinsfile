@@ -1,13 +1,17 @@
 pipeline {
     agent any
 
-    tools {
-        maven 'Maven'
-    }
-
     stages {
 
-       
+        stage('Build User Service') {
+            steps {
+                echo '========== Building User Service =========='
+                dir('user-service') {
+                    bat 'mvn clean package -DskipTests'
+                }
+                echo '========== User Service Build SUCCESS =========='
+            }
+        }
 
         stage('Build Product Service') {
             steps {
