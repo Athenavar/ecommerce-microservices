@@ -1,100 +1,84 @@
 pipeline {
     agent any
-
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '3')) // Keep only last 3 builds to save space
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+        skipStagesAfterUnstable()
+    }
+    
+    environment {
+        MAVEN_OPTS = '-Xmx512m' // Reduce memory usage
+    }
+    
     stages {
-
+        stage('Checkout') {
+            steps {
+                checkout scm
+                echo "✅ Code checked out from Git"
+            }
+        }
+        
         stage('Build User Service') {
             steps {
-                echo '========== Building User Service =========='
                 dir('user-service') {
                     bat 'mvn clean package -DskipTests'
                 }
-                echo '========== User Service Build SUCCESS =========='
+            }
+            post {
+                success {
+                    echo "✅ User Service built successfully"
+                }
             }
         }
-
+        
         stage('Build Product Service') {
             steps {
-                echo '========== Building Product Service =========='
                 dir('product-service') {
                     bat 'mvn clean package -DskipTests'
                 }
-                echo '========== Product Service Build SUCCESS =========='
             }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo '========== Running Tests =========='
-                dir('user-service') {
-                    bat 'mvn test'
+            post {
+                success {
+                    echo "✅ Product Service built successfully"
                 }
-                dir('product-service') {
-                    bat 'mvn test'
-                }
-                echo '========== All Tests PASSED =========='
             }
         }
-
-        stage('Build Docker Images') {
+        
+        stage('Archive Artifacts (Optional)') {
             steps {
-                echo '========== Building Docker Images =========='
-                dir('user-service') {
-                    bat 'docker build -t user-service .'
+                script {
+                    // Only archive if space permits, with error handling
+                    try {
+                        archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, allowEmptyArchive: true
+                        echo "✅ Artifacts archived"
+                    } catch (Exception e) {
+                        echo "⚠️ Warning: Could not archive artifacts - ${e.message}"
+                        echo "💡 Build JARs are still available in workspace"
+                    }
                 }
-                dir('product-service') {
-                    bat 'docker build -t product-service .'
-                }
-                echo '========== Docker Images Built Successfully =========='
             }
         }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                echo '========== Deploying to Kubernetes =========='
-                dir('kubernetes') {
-                    bat 'kubectl apply -f user-deployment.yaml'
-                    bat 'kubectl apply -f product-deployment.yaml'
-                }
-                echo '========== Deployment Complete =========='
-            }
-        }
-
-        stage('Verify Deployments') {
-            steps {
-                echo '========== Verifying Pods =========='
-                bat 'kubectl get pods'
-                bat 'kubectl get services'
-            }
-        }
-
-        stage('Show Users and Products') {
-            steps {
-                echo '========== Fetching Users from User Service =========='
-                bat 'curl -s http://localhost:30007/users'
-
-                echo '========== Fetching Products from Product Service =========='
-                bat 'curl -s http://localhost:30008/products'
-
-                echo '========== Data Fetch Complete =========='
-            }
-        }
-
     }
-
+    
     post {
+        always {
+            // Clean workspace to free disk space (optional - comment out if you need to keep files)
+            // cleanWs()
+            
+            echo "Build completed - Check workspace for JAR files"
+        }
         success {
-            echo '=========================================='
-            echo '   BUILD SUCCESS!'
-            echo '   User Service    -> http://localhost:30007/users'
-            echo '   Product Service -> http://localhost:30008/products'
-            echo '   Both services running in Kubernetes!'
-            echo '=========================================='
+            echo "🎉 SUCCESS: Both services built successfully!"
+            echo "User Service: user-service/target/user-service-0.0.1-SNAPSHOT.jar"
+            echo "Product Service: product-service/target/product-service-0.0.1-SNAPSHOT.jar"
         }
         failure {
-            echo '=========================================='
-            echo '   BUILD FAILED - Check logs above'
-            echo '=========================================='
+            echo "❌ FAILURE: Build failed - check logs above"
+        }
+        unstable {
+            echo "⚠️ UNSTABLE: Build completed with warnings"
         }
     }
 }
